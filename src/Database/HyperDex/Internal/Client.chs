@@ -1,7 +1,7 @@
 {-# LANGUAGE ViewPatterns #-}
 
-module Database.HyperDex.Internal.Client 
-  ( Hyperclient, Client
+module Database.HyperDex.Internal.Client
+  ( HyperdexClient, Client
   , ConnectInfo (..)
   , defaultConnectInfo
   , ConnectOptions (..)
@@ -31,13 +31,13 @@ import Control.Concurrent (yield, threadDelay)
 import Control.Concurrent.MVar
 
 import Data.Text.Encoding (encodeUtf8)
-import qualified Data.Text as Text (pack) 
+import qualified Data.Text as Text (pack)
 
 import Data.Default
 
-#include "hyperclient.h"
+#include "hyperdex/client.h"
 
-{#pointer *hyperclient as Hyperclient #}
+{#pointer *hyperdex_client as HyperdexClient #}
 
 -- | Parameters for connecting to a HyperDex cluster.
 data ConnectInfo =
@@ -49,7 +49,7 @@ data ConnectInfo =
   deriving (Eq, Read, Show)
 
 instance Default ConnectInfo where
-  def = 
+  def =
     ConnectInfo
       { connectHost = "127.0.0.1"
       , connectPort = 1982
@@ -80,8 +80,8 @@ defaultConnectOptions :: ConnectOptions
 defaultConnectOptions = def
 
 -- | A connectionBackoff method controls how frequently the client polls internally.
--- 
--- This is provided to allow fine-tuning performance. Do note that 
+--
+-- This is provided to allow fine-tuning performance. Do note that
 -- this does not affect any method the HyperClient C library uses to poll
 -- its connection to a HyperDex cluster.
 --
@@ -91,40 +91,40 @@ data BackoffMethod
   = BackoffYield
   -- | Delay a constant number of microseconds each inter.
   | BackoffConstant Int
-  -- | Delay with an initial number of microseconds, increasing linearly by the second value. 
+  -- | Delay with an initial number of microseconds, increasing linearly by the second value.
   | BackoffLinear Int Int
-  -- | Delay with an initial number of microseconds, increasing exponentially by the second value.  
+  -- | Delay with an initial number of microseconds, increasing exponentially by the second value.
   | BackoffExponential Int Double
   deriving (Eq, Read, Show)
 
--- | A callback used to perform work when the Hyperclient loop indicates an
+-- | A callback used to perform work when the HyperdexClient loop indicates an
 -- operation has been completed.
 --
 -- A 'Nothing' value indicates that no further work is necessary, and a 'Just' value
 -- will store a new Handle and HandleCallback.
 newtype HandleCallback = HandleCallback (Maybe ReturnCode -> IO (Maybe (Handle, HandleCallback)))
 
--- | The core data type managing access to a 'Hyperclient' object and all
+-- | The core data type managing access to a 'HyperdexClient' object and all
 -- currently running asynchronous operations.
 --
--- The 'MVar' is used as a lock to control access to the 'Hyperclient' and
+-- The 'MVar' is used as a lock to control access to the 'HyperdexClient' and
 -- a map of open handles and continuations, or callbacks, that must be executed
 -- to complete operations. A 'HandleCallback' may yield Nothing or a new 'Handle'
 -- and 'HandleCallback' to be stored in the map.
-type HyperclientWrapper = MVar (Maybe Hyperclient, Map Handle HandleCallback)
+type HyperdexClientWrapper = MVar (Maybe HyperdexClient, Map Handle HandleCallback)
 
 data ClientData =
   ClientData
-    { hyperclientWrapper :: HyperclientWrapper
+    { hyperdex_clientWrapper :: HyperdexClientWrapper
     , connectionInfo     :: ConnectInfo
     }
 
 -- | A connection to a HyperDex cluster.
-newtype Client = Client { unClientData :: ClientData } 
+newtype Client = Client { unClientData :: ClientData }
 
--- | Internal method for returning the (MVar) wrapped connection. 
-getClient :: Client -> HyperclientWrapper
-getClient = hyperclientWrapper . unClientData
+-- | Internal method for returning the (MVar) wrapped connection.
+getClient :: Client -> HyperdexClientWrapper
+getClient = hyperdex_clientWrapper . unClientData
 
 -- | Get the connection info used for a 'Client'.
 getConnectInfo :: Client -> ConnectInfo
@@ -134,7 +134,7 @@ getConnectInfo = connectionInfo . unClientData
 getConnectOptions :: Client -> ConnectOptions
 getConnectOptions = connectOptions . getConnectInfo
 
--- | Return value from hyperclient operations.
+-- | Return value from hyperdex_client operations.
 --
 -- Per the specification, it's guaranteed to be a unique integer for
 -- each outstanding operation using a given HyperClient. In practice
@@ -150,7 +150,7 @@ type Result a = IO (Either ReturnCode a)
 --
 -- Internally the wrappers to the HyperDex library will return
 -- a computation that yields a 'Handle' referring to that request
--- and a continuation that will force the request to return an 
+-- and a continuation that will force the request to return an
 -- error in the form of a ReturnCode or a result.
 --
 -- The result of forcing the result is undefined.
@@ -175,7 +175,7 @@ type StreamResultHandle a = IO (Handle, Maybe ReturnCode -> Result a)
 -- The full type is an IO (IO (Either ReturnCode a)). Evaluating
 -- the result of an asynchronous call, such as the default get and
 -- put operations starts the request to the HyperDex cluster. Evaluating
--- the result of that evaluation will poll internally, using the 
+-- the result of that evaluation will poll internally, using the
 -- connection's 'BackoffMethod' until the result is available.
 --
 -- This API may be deprecated in favor of exclusively using MVars in
@@ -187,12 +187,12 @@ newtype SearchStream a = SearchStream (a, Result (SearchStream a))
 -- | Connect to a HyperDex cluster.
 connect :: ConnectInfo -> IO Client
 connect info = do
-  hyperclient <- hyperclientCreate (encodeUtf8 . Text.pack . connectHost $ info) (connectPort info)
-  clientData <- newMVar (Just hyperclient, Map.empty)
+  hyperdex_client <- hyperdex_clientCreate (encodeUtf8 . Text.pack . connectHost $ info) (connectPort info)
+  clientData <- newMVar (Just hyperdex_client, Map.empty)
   return $
     Client
     $ ClientData
-      { hyperclientWrapper = clientData 
+      { hyperdex_clientWrapper = clientData
       , connectionInfo = info
       }
 
@@ -203,15 +203,15 @@ connect info = do
 -- immediately. Any outstanding requests at the time the 'Client'
 -- is closed ought to return a 'ReturnCode' indicating the failure
 -- condition, but the behavior is ultimately undefined. Any pending
--- requests should be disregarded. 
+-- requests should be disregarded.
 forceClose :: Client -> IO ()
 forceClose (getClient -> c) = do
   clientData <- takeMVar c
   case clientData of
     (Nothing, _)        -> error "HyperDex client error - cannot close a client connection twice."
     (Just hc, handles)  -> do
-      hyperclientDestroy hc
-      mapM_ (\(HandleCallback cont) -> cont Nothing) $ Map.elems handles 
+      hyperdex_clientDestroy hc
+      mapM_ (\(HandleCallback cont) -> cont Nothing) $ Map.elems handles
       putMVar c (Nothing, Map.empty)
 
 -- | Wait for graceful termination of all outstanding requests and
@@ -227,7 +227,7 @@ close client@(getClient -> c) = do
     (Just hc, handles)  -> do
       case Map.null handles of
         True  -> do
-          hyperclientDestroy hc
+          hyperdex_clientDestroy hc
           putMVar c (Nothing, Map.empty)
         False -> do
           -- Have to put it back in order to run loopClient
@@ -236,7 +236,7 @@ close client@(getClient -> c) = do
           close client
 
 doExponentialBackoff :: Int -> Double -> (Int, BackoffMethod)
-doExponentialBackoff b x = 
+doExponentialBackoff b x =
   let result = ceiling (fromIntegral b ** x) in
     (result, BackoffExponential result x)
 {-# INLINE doExponentialBackoff #-}
@@ -264,16 +264,16 @@ performBackoff method cap = do
   doDelay >> return nextDelay
 {-# INLINE performBackoff #-}
 
--- | Runs a single iteration of hyperclient_loop, returning whether
+-- | Runs a single iteration of hyperdex_client_loop, returning whether
 -- or not a handle was completed and a new set of callbacks.
 --
 -- This function does not use locking around the client.
-handleLoop :: Hyperclient -> Map Handle HandleCallback -> IO (Maybe Handle, Map Handle HandleCallback)
+handleLoop :: HyperdexClient -> Map Handle HandleCallback -> IO (Maybe Handle, Map Handle HandleCallback)
 handleLoop hc handles = do
   -- TODO: Examine returnCode for things that might matter.
-  (handle, returnCode) <- hyperclientLoop hc 0
+  (handle, returnCode) <- hyperdex_clientLoop hc 0
   case returnCode of
-    HyperclientSuccess -> do
+    HyperdexClientSuccess -> do
       let clearedMap = Map.delete handle handles
       resultMap <- do
         case Map.lookup handle handles of
@@ -284,9 +284,9 @@ handleLoop hc handles = do
               Just (h, e) -> return $ Map.insert h e clearedMap
           Nothing -> return clearedMap
       return $ (Just handle, resultMap)
-    HyperclientTimeout -> do
+    HyperdexClientTimeout -> do
       handleLoop hc handles
-    HyperclientNonepending -> do
+    HyperdexClientNonepending -> do
       mapM_ (\(HandleCallback cont) -> cont Nothing) $ Map.elems handles
       return $ (Just handle, Map.empty)
     _ -> do
@@ -294,7 +294,7 @@ handleLoop hc handles = do
 
 {-# INLINE handleLoop #-}
 
--- | Runs hyperclient_loop exactly once, setting the appropriate MVar.
+-- | Runs hyperdex_client_loop exactly once, setting the appropriate MVar.
 loopClient :: Client -> IO (Maybe Handle)
 loopClient (getClient -> c) = do
   clientData <- takeMVar c
@@ -306,7 +306,7 @@ loopClient (getClient -> c) = do
       return maybeHandle
 {-# INLINE loopClient #-}
 
--- | Run hyperclient_loop at most N times or forever until a handle
+-- | Run hyperdex_client_loop at most N times or forever until a handle
 -- is returned.
 loopClientUntil :: Client -> Handle -> MVar a -> BackoffMethod -> Maybe Int -> IO (Bool)
 loopClientUntil _      _ _ _    (Just 0) = return False
@@ -340,14 +340,14 @@ loopClientUntil client h v back Nothing = do
         (Just _, handles)  -> do
           case Map.member h handles of
             False -> return True
-            True  -> do 
+            True  -> do
               back' <- performBackoff back (connectionBackoffCap . getConnectOptions $ client)
               loopClientUntil client h v back' Nothing
     False -> return True
 {-# INLINE loopClientUntil #-}
 
 -- | Wrap a HyperClient request and wait until completion or failure.
-withClientImmediate :: Client -> (Hyperclient -> IO a) -> IO a
+withClientImmediate :: Client -> (HyperdexClient -> IO a) -> IO a
 withClientImmediate (getClient -> c) f =
   withMVar c $ \value -> do
     case value of
@@ -355,8 +355,8 @@ withClientImmediate (getClient -> c) f =
       (Just hc, _) -> f hc
 {-# INLINE withClientImmediate #-}
 
--- | Wrap a Hyperclient request.
-withClient :: Client -> (Hyperclient -> AsyncResultHandle a) -> AsyncResult a
+-- | Wrap a HyperdexClient request.
+withClient :: Client -> (HyperdexClient -> AsyncResultHandle a) -> AsyncResult a
 withClient client@(getClient -> c) f = do
   value <- takeMVar c
   case value of
@@ -372,23 +372,23 @@ withClient client@(getClient -> c) f = do
                 return Nothing
           putMVar c (Just hc, Map.insert h wrappedCallback handles)
           return $ do
-            success <- loopClientUntil client h v (connectionBackoff . getConnectOptions $ client) Nothing 
+            success <- loopClientUntil client h v (connectionBackoff . getConnectOptions $ client) Nothing
             case success of
               True  -> takeMVar v
-              False -> return $ Left HyperclientPollfailed
+              False -> return $ Left HyperdexClientPollfailed
         False -> do
           putMVar c (Just hc, handles)
           returnValue <- cont
-          -- A HyperclientInterrupted return code indicates that there was a signal
+          -- A HyperdexClientInterrupted return code indicates that there was a signal
           -- received by the client that prevented the call from completing, thus
           -- the request should be transparently retried.
           case returnValue of
-            Left HyperclientInterrupted -> withClient client f
+            Left HyperdexClientInterrupted -> withClient client f
             _ -> return . return $ returnValue
 {-# INLINE withClient #-}
 
--- | Wrap a Hyperclient request that returns a search stream.
-withClientStream :: Client -> (Hyperclient -> StreamResultHandle a) -> AsyncResult (SearchStream a)
+-- | Wrap a HyperdexClient request that returns a search stream.
+withClientStream :: Client -> (HyperdexClient -> StreamResultHandle a) -> AsyncResult (SearchStream a)
 withClientStream client@(getClient -> c) f = do
   value <- takeMVar c
   case value of
@@ -405,15 +405,15 @@ withClientStream client@(getClient -> c) f = do
                 return $ Just (h, callback)
           putMVar c (Just hc, Map.insert h wrappedCallback handles)
           return $ do
-            success <- loopClientUntil client h v (connectionBackoff . getConnectOptions $ client) Nothing 
+            success <- loopClientUntil client h v (connectionBackoff . getConnectOptions $ client) Nothing
             case success of
               True  -> takeMVar v
-              False -> return $ Left HyperclientPollfailed
+              False -> return $ Left HyperdexClientPollfailed
         False -> do
           putMVar c (Just hc, handles)
           returnValue <- cont Nothing
           case returnValue of
-            Left HyperclientInterrupted -> withClientStream client f
+            Left HyperdexClientInterrupted -> withClientStream client f
             _ -> do
               (result, _) <- wrapSearchStream returnValue client h cont
               return . return $ result
@@ -433,35 +433,35 @@ wrapSearchStream (Right a) client h cont = do
         case success of
           True  -> takeMVar v
                   -- TODO: Return actual ReturnCode
-          False -> return $ Left HyperclientPollfailed
+          False -> return $ Left HyperdexClientPollfailed
   return $ (return $ SearchStream (a, cont'), wrappedCallback)
 {-# INLINE wrapSearchStream #-}
 
--- | C wrapper for hyperclient_create. Creates a HyperClient given a host
+-- | C wrapper for hyperdex_client_create. Creates a HyperClient given a host
 -- and a port.
 --
 -- C definition:
--- 
--- > struct hyperclient*
--- > hyperclient_create(const char* coordinator, uint16_t port);
-hyperclientCreate :: ByteString -> Word16 -> IO Hyperclient
-hyperclientCreate h port = withCBString h $ \host ->
-  wrapHyperCall $ {# call hyperclient_create #} host (fromIntegral port)
-
--- | C wrapper for hyperclient_destroy. Destroys a HyperClient.
 --
--- /Note:/ This does not ensure resources are freed. Any memory 
+-- > struct hyperdex_client*
+-- > hyperdex_client_create(const char* coordinator, uint16_t port);
+hyperdex_clientCreate :: ByteString -> Word16 -> IO HyperdexClient
+hyperdex_clientCreate h port = withCBString h $ \host ->
+  wrapHyperCall $ {# call hyperdex_client_create #} host (fromIntegral port)
+
+-- | C wrapper for hyperdex_client_destroy. Destroys a HyperClient.
+--
+-- /Note:/ This does not ensure resources are freed. Any memory
 -- allocated as staging for incomplete requests will not be returned.
 --
 -- C definition:
--- 
+--
 -- > void
--- > hyperclient_destroy(struct hyperclient* client);
-hyperclientDestroy :: Hyperclient -> IO ()
-hyperclientDestroy client = wrapHyperCall $ 
-  {# call hyperclient_destroy #} client
+-- > hyperdex_client_destroy(struct hyperdex_client* client);
+hyperdex_clientDestroy :: HyperdexClient -> IO ()
+hyperdex_clientDestroy client = wrapHyperCall $
+  {# call hyperdex_client_destroy #} client
 
--- | C wrapper for hyperclient_loop. Waits up to some number of
+-- | C wrapper for hyperdex_client_loop. Waits up to some number of
 -- milliseconds for a result before returning.
 --
 -- A negative 'Handle' return value indicates a failure condition
@@ -471,12 +471,12 @@ hyperclientDestroy client = wrapHyperCall $
 -- C definition:
 --
 -- > int64_t
--- > hyperclient_loop(struct hyperclient* client, int timeout,
--- >                  enum hyperclient_returncode* status);
-hyperclientLoop :: Hyperclient -> Int -> IO (Handle, ReturnCode)
-hyperclientLoop client timeout =
+-- > hyperdex_client_loop(struct hyperdex_client* client, int timeout,
+-- >                  enum hyperdex_client_returncode* status);
+hyperdex_clientLoop :: HyperdexClient -> Int -> IO (Handle, ReturnCode)
+hyperdex_clientLoop client timeout =
   alloca $ \returnCodePtr -> do
-    handle <- wrapHyperCall $ {# call hyperclient_loop #} client (fromIntegral timeout) returnCodePtr
+    handle <- wrapHyperCall $ {# call hyperdex_client_loop #} client (fromIntegral timeout) returnCodePtr
     returnCode <- fmap (toEnum . fromIntegral) $ peek returnCodePtr
     return (handle, returnCode)
-{-# INLINE hyperclientLoop #-}
+{-# INLINE hyperdex_clientLoop #-}

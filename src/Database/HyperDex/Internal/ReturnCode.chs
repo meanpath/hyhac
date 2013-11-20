@@ -1,7 +1,11 @@
-module Database.HyperDex.Internal.ReturnCode 
-  ( ReturnCode (..) ) 
+module Database.HyperDex.Internal.ReturnCode
+  ( ReturnCode (..),
+    AdminReturnCode (..)
+  )
   where
 
-#include "hyperclient.h"
+#include "hyperdex/client.h"
+#include "hyperdex/admin.h"
 
-{#enum hyperclient_returncode as ReturnCode {underscoreToCase} deriving (Eq, Show) #}
+{#enum hyperdex_client_returncode as ReturnCode {underscoreToCase} deriving (Eq, Show) #}
+{#enum hyperdex_admin_returncode as AdminReturnCode {underscoreToCase} deriving (Eq, Show) #}

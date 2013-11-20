@@ -1,7 +1,7 @@
 name:                hyhac
 version:             0.9.0.0
 synopsis:            A HyperDex client library
-description:         
+description:
   A client for accessing the HyperDex distributed database
 license:             BSD3
 license-file:        LICENSE
@@ -13,7 +13,7 @@ build-type:          Simple
 
 extra-source-files:  README.md
   include/hyperdex.h
-  include/hyperclient.h
+  include/hyperdex_client.h
 
 cabal-version:       >=1.10
 
@@ -30,19 +30,21 @@ library
   exposed-modules:
     Database.HyperDex
     Database.HyperDex.Client
+    Database.HyperDex.Admin
     Database.HyperDex.Utf8
 
-  other-modules:    
+  other-modules:
     Database.HyperDex.Internal
     Database.HyperDex.Internal.ReturnCode
     Database.HyperDex.Internal.Client
+    Database.HyperDex.Internal.Admin
     Database.HyperDex.Internal.Space
     Database.HyperDex.Internal.Attribute
     Database.HyperDex.Internal.AttributeCheck
     Database.HyperDex.Internal.MapAttribute
     Database.HyperDex.Internal.Hyperdex
     Database.HyperDex.Internal.Hyperdata
-    Database.HyperDex.Internal.Hyperclient
+    Database.HyperDex.Internal.HyperdexClient
 
   if flag(tests)
     exposed-modules: Database.HyperDex.Internal.Util
@@ -51,10 +53,10 @@ library
     other-modules:   Database.HyperDex.Internal.Util
 
   -- LANGUAGE extensions used by modules in this package.
-  -- other-extensions: 
-  
+  -- other-extensions:
+
   build-depends:
-      base                       == 4.6.*
+      base                       >= 4.6.0
     , bytestring                 >= 0.10
     , cereal                     >= 0.3.5
     , containers                 >= 0.5
@@ -80,7 +82,8 @@ library
   includes:          hyperdex.h
 
   extra-libraries:
-    hyperclient
+    hyperdex-client
+    hyperdex-admin
 
 Executable benchmark
   default-language:  Haskell2010
@@ -95,6 +98,7 @@ Executable benchmark
                      , text
                      , process
                      , resource-pool
+                     , direct-sqlite
   ghc-options:         -Wall -O2 -threaded
 
 source-repository head

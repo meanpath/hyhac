@@ -4,7 +4,7 @@ module Database.HyperDex
   )
 	where
 
-import Database.HyperDex.Client
+import           Database.HyperDex.Client
 
 hyhacVersion :: String
 hyhacVersion = "0.2.0.0"

@@ -1,7 +1,5 @@
-module Database.HyperDex.Internal.Space 
-  ( addSpace
-  , removeSpace
-  )
+module Database.HyperDex.Internal.Space
+  (addSpace, removeSpace)
   where
 
 import Foreign
@@ -10,27 +8,41 @@ import Foreign.C
 import Data.Text (Text)
 
 {#import Database.HyperDex.Internal.Client #}
+{#import Database.HyperDex.Internal.Admin #}
 {#import Database.HyperDex.Internal.ReturnCode #}
 import Database.HyperDex.Internal.Util
+import Control.Applicative
 
-#include "hyperclient.h"
+#include "hyperdex/client.h"
+#include "hyperdex/admin.h"
 
-addSpace :: Client -> Text -> IO ReturnCode
-addSpace c desc  = withClientImmediate c $ \hc -> do
-  hyperclientAddSpace hc desc
+-- addSpace :: HyperdexAdmin -> Text -> IO ReturnCode
+-- addSpace c desc  = withClientImmediate c $ \hc -> do
+--   hyperdex_adminAddSpace hc desc
 
-removeSpace :: Client -> Text -> IO ReturnCode
-removeSpace c name = withClientImmediate c $ \hc -> do
-  hyperclientRemoveSpace hc name
+-- removeSpace :: HyperdexAdmin -> Text -> IO ReturnCode
+-- removeSpace c name = withClientImmediate c $ \hc -> do
+--   hyperdex_adminRemoveSpace hc name
 
--- enum hyperclient_returncode
--- hyperclient_add_space(struct hyperclient* client, const char* description);
-hyperclientAddSpace :: Hyperclient -> Text -> IO ReturnCode
-hyperclientAddSpace client d = withTextUtf8 d $ \description -> do
-  fmap (toEnum . fromIntegral) $ wrapHyperCall $ {#call hyperclient_add_space #} client description
+addSpace = hyperdex_adminAddSpace
+removeSpace = hyperdex_adminRemoveSpace
 
--- enum hyperclient_returncode
--- hyperclient_rm_space(struct hyperclient* client, const char* space);
-hyperclientRemoveSpace :: Hyperclient -> Text -> IO ReturnCode
-hyperclientRemoveSpace client s = withTextUtf8 s $ \space -> do
-  fmap (toEnum . fromIntegral) $ wrapHyperCall $ {#call hyperclient_rm_space #} client space
+-- enum hyperdex_client_returncode
+--hyperdex_admin_add_space(struct hyperdex_client* client, const char* description);
+hyperdex_adminAddSpace :: HyperdexAdmin -> Text -> IO AdminReturnCode
+hyperdex_adminAddSpace = adminTask {#call hyperdex_admin_add_space #}
+
+-- enum hyperdex_client_returncode
+-- hyperdex_admin_rm_space(struct hyperdex_client* client, const char* space);
+hyperdex_adminRemoveSpace :: HyperdexAdmin -> Text -> IO AdminReturnCode
+hyperdex_adminRemoveSpace = adminTask {#call hyperdex_admin_rm_space #}
+
+adminTask func admin s  =  withTextUtf8 s $ \space -> do
+  returnCodePtr <-  new (fromIntegral . fromEnum $ HyperdexAdminGarbage)
+  wrapHyperCall $ func admin space returnCodePtr
+  toEnum . fromIntegral <$> peek returnCodePtr
+
+-- data Hole = Hole
+
+-- foo :: Hole
+-- foo = {#call hyperdex_admin_rm_space #}

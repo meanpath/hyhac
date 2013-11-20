@@ -1,22 +1,23 @@
 {-# LANGUAGE OverloadedStrings #-}
-import Criterion.Main
-import qualified Database.HyperDex as H
+import           Criterion.Main
+import qualified Database.HyperDex          as H
+import qualified Database.HyperDex.Admin    as HA
 -- import qualified Database.Cassandra.Basic as C
-import System.Environment(getEnv)
-import Control.Monad --(forM_,forM,void,when,join,forever)
-import Control.Applicative
-import Control.DeepSeq
+import           Control.Applicative
+import           Control.DeepSeq
+import           Control.Monad
+import           System.Environment         (getEnv)
 
-import qualified Data.ByteString.Char8 as BS
+import qualified Data.ByteString.Char8      as BS
 import qualified Data.ByteString.Lazy.Char8 as BSL
-import qualified Data.Text as Text
-import qualified Data.Text.IO as Text
-import Data.Either(lefts)
+import           Data.Either                (lefts)
+import qualified Data.Text                  as Text
+import qualified Data.Text.IO               as Text
 
-import System.Cmd
-import System.IO
--- import qualified Database.SQLite3 as SQL
-import qualified Control.Exception as E
+import qualified Control.Exception          as E
+import qualified Database.SQLite3           as SQL
+import           System.Cmd
+import           System.IO
 
 instance NFData H.Attribute where
   rnf (H.Attribute a b c) = a `seq` b `seq` c `seq` ()
@@ -34,9 +35,9 @@ main = do
   wst <- Text.lines <$> Text.readFile "/usr/share/dict/words"
 
   let
-      lastname = BS.take 11000 $!! BS.unlines ws
-      lastnamel = BSL.take 11000 $!! BSL.unlines wsl
-      lastnamet = Text.take 10000 $!! Text.unlines wst
+      lastname = BS.take 50 $!! BS.unlines ws
+      lastnamel = BSL.take 50 $!! BSL.unlines wsl
+      lastnamet = Text.take 50 $!! Text.unlines wst
 
       testrun = take reps $!! ws
       testrunl = take reps $!! wsl
@@ -52,9 +53,10 @@ main = do
   -- pool <- C.createCassandraPool C.defServers 3 300 5 "testkeyspace"
 
   client <- H.connect H.defaultConnectInfo
+  admin <- HA.connect H.defaultConnectInfo
 
-  E.handle ignore $ void $ H.removeSpace client "phonebook"
-  _ <- H.addSpace client 
+  E.handle ignore $ void $ H.removeSpace admin "phonebook"
+  _ <- H.addSpace admin
        $ Text.unlines
          [ "space phonebook"
          , "key username"
@@ -64,11 +66,11 @@ main = do
          , "tolerate 0 failures"
          ]
 
-  -- db <- SQL.open "dummysql"
-  -- SQL.execPrint db "PRAGMA journal_mode=MEMORY; PRAGMA synchronous = OFF"
-  -- 
-  -- SQL.exec db "create table phonebook (username txt, content text);"
-  -- stmt <- SQL.prepare db "insert into phonebook (username, content) values (?,?);"
+  db <- SQL.open "dummysql"
+  SQL.execPrint db "PRAGMA journal_mode=MEMORY; PRAGMA synchronous = OFF"
+
+  SQL.exec db "create table phonebook (username txt, content text);"
+  stmt <- SQL.prepare db "insert into phonebook (username, content) values (?,?);"
 
   --file <- openFile "/dev/null" WriteMode
 
@@ -77,13 +79,13 @@ main = do
 
   putStrLn "starting"
   defaultMain [
-               -- bench "sqlite" $ do
-               --    SQL.execPrint db "begin transaction;"
-               --    finish ( \(_,_,x) -> do
-               --             SQL.bind stmt [SQL.SQLText x, SQL.SQLText lastnamet]
-               --             SQL.step stmt
-               --             SQL.reset stmt)
-               --      ( \_ -> SQL.execPrint db "end transaction;"  ),
+               bench "sqlite" $ do
+                  SQL.execPrint db "begin transaction;"
+                  finish ( \(_,_,x) -> do
+                           SQL.bind stmt [SQL.SQLText x, SQL.SQLText lastnamet]
+                           SQL.step stmt
+                           SQL.reset stmt)
+                    ( \_ -> SQL.execPrint db "end transaction;"  ),
                -- bench "file" $ do
                --   file <- openFile "./dummyfile" WriteMode
                --   finish (\(x,_,_) ->

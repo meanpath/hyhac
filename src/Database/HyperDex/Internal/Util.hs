@@ -11,14 +11,15 @@ module Database.HyperDex.Internal.Util
  )
  where
 
-import Foreign
-import Foreign.C
-import Data.ByteString.Char8
-import Data.Text (Text)
-import Data.Text.Encoding (encodeUtf8, decodeUtf8)
-
+import           Control.Applicative
+import           Data.ByteString.Char8
+import           Data.Text             (Text)
+import           Data.Text.Encoding    (decodeUtf8, encodeUtf8)
+import           Foreign
+import           Foreign.C
 #ifdef __UNIX__
-import System.Posix.Signals (reservedSignals, blockSignals, unblockSignals)
+import           System.Posix.Signals  (blockSignals, reservedSignals,
+                                        unblockSignals)
 #endif
 
 wrapHyperCall :: IO a -> IO a
@@ -121,7 +122,5 @@ newTextUtf8 = newCBString . encodeUtf8
 {-# INLINE newTextUtf8 #-}
 
 peekTextUtf8 :: Ptr CString -> IO Text
-peekTextUtf8 ptr = do
-  bstring <- peek ptr >>= packCString
-  return $ decodeUtf8 bstring 
-{-# INLINE peekTextUtf8 #-} 
+peekTextUtf8 ptr = decodeUtf8 <$> (peek ptr >>= packCString)
+{-# INLINE peekTextUtf8 #-}
