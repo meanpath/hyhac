@@ -37,10 +37,6 @@ hyperdex_adminAddSpace = adminTask {#call hyperdex_admin_add_space #}
 hyperdex_adminRemoveSpace :: HyperdexAdmin -> Text -> IO AdminReturnCode
 hyperdex_adminRemoveSpace = adminTask {#call hyperdex_admin_rm_space #}
 
-adminTask func admin s  =  withTextUtf8 s $ \space -> do
-  returnCodePtr <-  new (fromIntegral . fromEnum $ HyperdexAdminGarbage)
-  wrapHyperCall $ func admin space returnCodePtr
-  toEnum . fromIntegral <$> peek returnCodePtr
 
 -- data Hole = Hole
 

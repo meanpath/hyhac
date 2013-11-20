@@ -37,7 +37,8 @@ main = do
   let
       lastname = BS.take 50 $!! BS.unlines ws
       lastnamel = BSL.take 50 $!! BSL.unlines wsl
-      lastnamet = Text.take 50 $!! Text.unlines wst
+      lastnamet = Text.take 50
+                  $!! Text.unlines wst
 
       testrun = take reps $!! ws
       testrunl = take reps $!! wsl
@@ -55,7 +56,7 @@ main = do
   client <- H.connect H.defaultConnectInfo
   admin <- HA.connect H.defaultConnectInfo
 
-  E.handle ignore $ void $ H.removeSpace admin "phonebook"
+  E.handle ignore $ void $ (H.removeSpace admin "phonebook" >>   HA.hyperdex_waitUntilStable admin)
   _ <- H.addSpace admin
        $ Text.unlines
          [ "space phonebook"
@@ -65,6 +66,7 @@ main = do
          , "create 32 partitions"
          , "tolerate 0 failures"
          ]
+  HA.hyperdex_waitUntilStable admin
 
   db <- SQL.open "dummysql"
   SQL.execPrint db "PRAGMA journal_mode=MEMORY; PRAGMA synchronous = OFF"
